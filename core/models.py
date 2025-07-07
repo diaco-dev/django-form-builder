@@ -190,7 +190,7 @@ class CustomUser(AbstractUser):
     )
     objects = CustomUserManager()
 
-    USERNAME_FIELD = 'mobile'
+    USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
     class Meta:
@@ -200,6 +200,7 @@ class CustomUser(AbstractUser):
         indexes = (
             models.Index(fields=['id'], name='user_id_idx'),
             models.Index(fields=['mobile'], name='user_mobile_idx'),
+            models.Index(fields=['email'], name='user_email_idx'),
         )
 
     @property

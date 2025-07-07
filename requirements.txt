@@ -1,0 +1,54 @@
+# ==== Core Python Utilities ====
+pandas==2.2.3
+python-dotenv==1.1.0
+dotenv
+python-json-logger==3.3.0
+
+# ==== Django and Extensions ====
+Django>5.0,<5.2
+django-extensions==3.2.3
+drf-extensions==0.7.1
+djangorestframework==3.15.2
+djangorestframework_simplejwt==5.4.0
+django-cors-headers==4.6.0
+django-filter==25.1
+drf-flex-fields==1.0.2
+daphne==4.1.2
+openpyxl==3.1.5
+django-currentuser==0.8.0
+django-render-block==0.10
+gunicorn==23.0.0
+django-pickling==1.0
+django-cleanup==9.0.0
+django-simple-history==3.7.0
+drf-standardized-errors==0.14.1
+channels==4.2.0
+gunicorn==23.0.0
+uvicorn==0.34.0
+django-import-export==4.3.7
+djoser==2.3.1
+drf-yasg==1.21.10
+logger
+django-auditlog==3.1.2
+
+# ==== Security and Cryptography ====
+cryptography==41.0.7
+PyJWT==2.7.0
+
+# ==== Database and Caching ====
+psycopg2-binary==2.9.10
+
+# ==== Image and File Handling ====
+pillow==11.2.1
+
+
+
+#celery==5.4.0
+#redis==5.2.1
+#django-redis==5.4.0
+#django-eventstream==5.3.1
+#django-celery-beat==2.8.0
+#flower==2.0.1
+
+
+

@@ -1,11 +1,11 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from import_export.admin import ImportExportModelAdmin
-from import_export import resources, fields
+from import_export import resources
 from django.contrib.auth import get_user_model
 
 from core.forms import CustomUserCreationForm, CustomUserChangeForm
-from core.models import CustomUser, MobileList
+from core.models import CustomUser
 
 User = get_user_model()
 
@@ -52,25 +52,3 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
             'fields': ('mobile', 'email', 'password1', 'password2', 'first_name', 'last_name', 'role', 'is_active', 'is_verified'),
         }),
     )
-
-class MobileListResource(resources.ModelResource):
-    mobile = fields.Field(attribute='mobile', column_name='mobile')
-    first_name = fields.Field(attribute='first_name', column_name='first_name')
-    last_name = fields.Field(attribute='last_name', column_name='last_name')
-    class Meta:
-        model = MobileList
-        fields = ('mobile','first_name','last_name')
-        import_id_fields = ['mobile','first_name','last_name']
-
-
-
-@admin.register(MobileList)
-class MobileListAdmin(ImportExportModelAdmin):
-
-    model = MobileList
-    resource_class = MobileListResource
-
-    # Define fields to display in the admin list view
-    list_display = ('mobile', 'is_active','first_name','last_name')
-    list_editable = ('is_active',)
-    search_fields = ('mobile','first_name','last_name')

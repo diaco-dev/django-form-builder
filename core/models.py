@@ -210,7 +210,7 @@ class CustomUser(AbstractUser):
         return self.email
 
     def __str__(self):
-        return self.full_name or self.mobile or "Unsuccessful register"
+        return self.full_name or self.email or "Unsuccessful register"
 
 
     @property

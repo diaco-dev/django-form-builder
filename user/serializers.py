@@ -1,408 +1,120 @@
-from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from core.tasks import send_verification_sms
-import random
-import string
-from django_redis import get_redis_connection
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.conf import settings
-import logging
-from django.db import transaction
+from django.contrib.auth import get_user_model, password_validation
+from django.utils import timezone
+from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 
-logger = logging.getLogger(__name__)
+from core.serializers import CustomSerializer
+from core.types import UserType
+from history.models import UserEmailHistory
+
 User = get_user_model()
 
 
-# ---------------------------------------------------------------------------------------------------------------------
-# register / verify=ture
-# ---------------------------------------------------------------------------------------------------------------------
+class RegisterSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(
+        required=True,
+        validators=[UniqueValidator(queryset=User.objects.all())]
+    )
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    re_password = serializers.CharField(write_only=True, required=True)
 
-class RegisterVerifySerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-    email = serializers.EmailField(max_length=100, required=False, allow_blank=True)
-    code = serializers.CharField(max_length=6)
-    password = serializers.CharField(write_only=True)
-    re_password = serializers.CharField(write_only=True)
-    first_name = serializers.CharField(max_length=100, required=False)
-    last_name = serializers.CharField(max_length=100, required=False)
-    role = serializers.ChoiceField(choices=User.ROLE_CHOICES, required=False)
-    gender = serializers.ChoiceField(choices=User.GENDER, required=False)
+    class Meta:
+        model = get_user_model()
+        fields = ('password', 're_password', 'email', 'first_name', 'last_name')
 
-    def validate(self, data):
-        mobile = data.get('mobile', '')
-        code = data.get('code', '')
-        password = data.get('password', '')
-        re_password = data.get('re_password', '')
+    def validate(self, attrs):
+        if attrs['password'] != attrs['re_password']:
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
 
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"mobile": "فرمت شماره موبایل نادرست است."})
+        return attrs
 
-        if password != re_password:
-            raise serializers.ValidationError({"re_password": "رمز عبور مطابقت ندارد."})
+    def create(self, validated_data):
+        if 're_password' in validated_data:
+            validated_data.pop('re_password')
 
-        if User.objects.filter(mobile=mobile).exists():
-            raise serializers.ValidationError({"mobile": "این شماره قبلاً ثبت شده است."})
+        validated_data['email'] = validated_data['email'].lower()
 
-        redis_conn = get_redis_connection("default")
-        stored_code = redis_conn.get(f"verification_code:{mobile}")
-        if not stored_code:
-            raise serializers.ValidationError({"code": "کد تأیید یافت نشد."})
-        if stored_code.decode('utf-8') != code:
-            raise serializers.ValidationError({"code": "کد تأیید اشتباه است."})
-
-        return data
-
-    def save(self):
-        data = self.validated_data
-
-        with transaction.atomic():
-            user = User.objects.create_user(
-                mobile=data['mobile'],
-                email=data.get('email', ''),
-                password=data['password'],
-                first_name=data.get('first_name', ''),
-                last_name=data.get('last_name', ''),
-                gender=data.get('gender', ''),
-                is_verified=True,
-                is_active=False,
-            )
-            if not user.is_active:
-                if MobileList.objects.filter(mobile=user.mobile, is_active=True).exists():
-                    user.is_active = True
-                    user.save()
-                else:
-                    raise serializers.ValidationError({
-                        "error": "حساب کاربری غیرفعال است و شماره موبایل در لیست نیست لطفا با پشتیبانی تماس بگیرید."
-                    })
-            redis_conn = get_redis_connection("default")
-            redis_conn.delete(f"verification_code:{data['mobile']}")
-
-        queue_login_notification(user)
+        # user = User.objects.create(
+        #     email=str(validated_data['email']).lower()
+        # )
+        user = User(**validated_data)
+        user.set_password(validated_data['password'])
+        user.save()
 
         return user
 
-# ---------------------------------------------------------------------------------------------------------------------
-# register / BC
-# ---------------------------------------------------------------------------------------------------------------------
-class CreateUserSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-    password = serializers.CharField(write_only=True)
-    re_password = serializers.CharField(write_only=True)
-    first_name = serializers.CharField(max_length=100, required=True)
-    last_name = serializers.CharField(max_length=100, required=True)
-    role = serializers.ChoiceField(choices=User.ROLE_CHOICES,required=True)
 
-    def validate(self, data):
-        mobile = data.get('mobile', '')
-        password = data.get('password', '')
-        re_password = data.get('re_password', '')
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"mobile": "فرمت شماره موبایل نادرست است."})
-
-        if password != re_password:
-            raise serializers.ValidationError({"re_password": "رمز عبور مطابقت ندارد."})
-
-        if User.objects.filter(mobile=mobile).exists():
-            raise serializers.ValidationError({"mobile": "این شماره قبلاً ثبت شده است."})
-
-        return data
-
-    def save(self):
-        data = self.validated_data
-
-        with transaction.atomic():
-            user = User.objects.create_user(
-                mobile=data['mobile'],
-                password=data['password'],
-                first_name=data.get('first_name', ''),
-                last_name=data.get('last_name', ''),
-                role=data['role'],
-                is_verified=True,
-                is_active=True,
-            )
-        return user
-
-class UpdateUserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False)
-    re_password = serializers.CharField(write_only=True, required=False)
+class ChangePasswordSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    re_password = serializers.CharField(write_only=True, required=True)
+    old_password = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ['mobile', 'first_name', 'last_name', 'role', 'password', 're_password']
-        extra_kwargs = {
-            'mobile': {'required': False},
-            'role': {'required': False},
-        }
+        fields = ('old_password', 'password', 're_password')
 
-    def validate(self, data):
-        password = data.get('password')
-        re_password = data.get('re_password')
+    def validate(self, attrs):
+        if attrs['password'] != attrs['re_password']:
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
 
-        if password or re_password:
-            if password != re_password:
-                raise serializers.ValidationError({"re_password": "رمز عبور مطابقت ندارد."})
+        return attrs
 
-        return data
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError({"old_password": "Old password is not correct"})
+        return value
 
     def update(self, instance, validated_data):
-        # Update simple fields
-        instance.first_name = validated_data.get('first_name', instance.first_name)
-        instance.last_name = validated_data.get('last_name', instance.last_name)
-        instance.mobile = validated_data.get('mobile', instance.mobile)
-        instance.role = validated_data.get('role', instance.role)
+        user = self.context['request'].user
 
-        # Handle password
-        password = validated_data.get('password')
-        if password:
-            instance.set_password(password)
+        if user.pk != instance.pk:
+            raise serializers.ValidationError({"authorize": "You dont have permission for this user."})
+
+        instance.set_password(validated_data['password'])
+        instance.save()
+
+        return instance
+
+    def validate_email(self, value):
+        user = self.context['request'].user
+        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
+            raise serializers.ValidationError({"email": "This email is already in use."})
+        return value
+
+    # def validate_username(self, value):
+    #     user = self.context['request'].user
+    #     if User.objects.exclude(pk=user.pk).filter(username=value).exists():
+    #         raise serializers.ValidationError({"username": "This username is already in use."})
+    # #     return value
+
+    def update(self, instance, validated_data):
+        user = self.context['request'].user
+
+        if user.pk != instance.pk:
+            raise serializers.ValidationError({"authorize": "You dont have permission for this user."})
+
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
 
         instance.save()
+
         return instance
-# ---------------------------------------------------------------------------------------------------------------------
-# forget password
-# ---------------------------------------------------------------------------------------------------------------------
-# - 1 ------send code
-class ForgotPasswordSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=100)
-
-    def validate(self, data):
-        mobile = data['mobile']
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError("فرمت شماره موبایل نادرست است")
-        user = User.objects.filter(mobile=mobile).first()
-        if not user:
-            raise serializers.ValidationError("کاربری با این شماره موبایل ساخته نشده .")
-
-        verification_code = ''.join(random.choices(string.digits, k=6))
-
-        redis_conn = get_redis_connection("default")
-        redis_conn.setex(f"forgot_code:{mobile}", 120, verification_code)
-
-        send_verification_sms.delay(mobile, verification_code)
-
-        return data
 
 
-# - 2--------verify code
-class VerifyForgotCodeSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=100)
-    code = serializers.CharField(max_length=6)
-    password = serializers.CharField(write_only=True)
-    re_password = serializers.CharField(write_only=True)
-
-    def validate(self, data):
-        mobile = data['mobile']
-        code = data['code']
-        password = data['password']
-        re_password = data['re_password']
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"error": "فرمت شماره موبایل نادرست است."})
-
-        if password != re_password:
-            raise serializers.ValidationError({"رمز عبور مطابقت ندارد."})
-
-        user = User.objects.filter(mobile=mobile).first()
-        if not user:
-            raise serializers.ValidationError({"فرمت شماره موبایل نادرست است."})
-
-        redis_conn = get_redis_connection("default")
-        stored_code = redis_conn.get(f"forgot_code:{mobile}")
-
-        if not stored_code or stored_code.decode('utf-8') != code:
-            raise serializers.ValidationError({"error": "کد تایید نا معتبر است یا متقضی شده است "})
-
-        data['user'] = user
-        return data
-
-    def save(self):
-        mobile = self.validated_data['mobile']
-        password = self.validated_data['password']
-        user = User.objects.get(mobile=mobile)
-        user.set_password(password)
-        user.save()
-        redis_conn = get_redis_connection("default")
-        redis_conn.delete(f"forgot_code:{mobile}")
-        return user
-
-# ---------------------------------------------------------------------------------------------------------------------
-# send code mobile redis register
-# ---------------------------------------------------------------------------------------------------------------------
-class SendCodeSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-
-
-    def validate(self, data):
-        mobile = data.get('mobile')
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"error": "فرمت شماره موبایل نادرست است"})
-
-        try:
-            verification_code = ''.join(random.choices(string.digits, k=6))
-            redis_conn = get_redis_connection("default")
-            redis_conn.setex(f"verification_code:{mobile}", 120, verification_code)
-            logger.info(f"OTP {verification_code} stored for mobile {mobile}")
-
-            send_verification_sms.delay(mobile, verification_code)
-            logger.info(f"OTP send task triggered for mobile {mobile}")
-        except Exception as e:
-            logger.error(f"Error sending OTP for mobile {mobile}: {str(e)}")
-            raise serializers.ValidationError({"error": f"ارسال کد تأیید ناموفق بود: {str(e)}"})
-
-        return data
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# MODEL: log-in user
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-class SendCodeLoginSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-
-    def validate(self, data):
-        mobile = data.get('mobile')
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"error": "فرمت شماره موبایل نادرست است"})
-
-        try:
-            user = User.objects.get(mobile=mobile)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"error": "کاربری با این شماره موبایل یافت نشد."})
-
-        if user.role not in ['admin', 'user', 'superuser']:
-            raise serializers.ValidationError({"error": "دسترسی برای کاربران بیزینس کوچ مجاز نیست."})
-
-        try:
-            verification_code = ''.join(random.choices(string.digits, k=6))
-            redis_conn = get_redis_connection("default")
-            redis_conn.setex(f"verification_code:{mobile}", 120, verification_code)
-            logger.info(f"OTP {verification_code} stored for mobile {mobile}")
-
-            send_verification_sms.delay(mobile, verification_code)
-            logger.info(f"OTP send task triggered for mobile {mobile}")
-        except Exception as e:
-            logger.error(f"Error sending OTP for mobile {mobile}: {str(e)}")
-            raise serializers.ValidationError({"error": f"ارسال کد تأیید ناموفق بود: {str(e)}"})
-
-        return data
-
-
-class LoginOtpSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-    code = serializers.CharField(max_length=6)
-
-    def validate(self, data):
-        mobile = data.get('mobile')
-        code = data.get('code')
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"error": "فرمت شماره موبایل نادرست است"})
-
-        redis_conn = get_redis_connection("default")
-        stored_code = redis_conn.get(f"verification_code:{mobile}")
-
-        if not stored_code or stored_code.decode() != code:
-            raise serializers.ValidationError({"error": "کد تایید نا معتبر است یا متقضی شده است "})
-
-        redis_conn.delete(f"verification_code:{mobile}")
-
-        try:
-            user = User.objects.get(mobile=mobile)
-        except User.DoesNotExist:
-            user = User.objects.create_user(
-                username=mobile,
-                password=None
-            )
-
-        if not user.is_verified:
-            raise serializers.ValidationError({"error": "حساب کاربری شما تایید نشده است ."})
-
-        if not user.is_active:
-            if MobileList.objects.filter(mobile=mobile, is_active=True).exists():
-                user.is_active = True
-                user.save()
-            else:
-                raise serializers.ValidationError(
-                    {"error": "حساب کاربری غیرفعال است و شماره موبایل در لیست نیست لطفا با پشتیبانی تماس بگیرید."})
-
-        data['user'] = user
-        return data
-
-
-class LoginSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11, required=True)
-    password = serializers.CharField(write_only=True, required=True)
-
-    def validate(self, data):
-        mobile = data.get('mobile')
-        password = data.get('password')
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"error": "فرمت شماره موبایل نادرست است"})
-
-        try:
-            user = User.objects.get(mobile=mobile)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"error": "کاربری با این شماره موبایل ساخته نشده."})
-        except Exception as e:
-            raise serializers.ValidationError({"error": f"An error occurred while fetching user: {str(e)}"})
-
-        if not user.is_verified:
-            raise serializers.ValidationError({"error": "حساب کاربری شما تایید نشده است ."})
-
-        if not user.is_active:
-            if MobileList.objects.filter(mobile=mobile, is_active=True).exists():
-                user.is_active = True
-                user.save()
-            else:
-                raise serializers.ValidationError(
-                    {"error": "حساب کاربری غیرفعال است و شماره موبایل در لیست نیست لطفا با پشتیبانی تماس بگیرید."})
-
-        if not user.check_password(password):
-            raise serializers.ValidationError({"error": "رمز عبور نامعتبر"})
-
-        data['user'] = user
-        return data
-
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# MODEL: profile user
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-class ProfileUserSerializer(serializers.ModelSerializer):
-    industry_name = serializers.CharField(source='industry.name', read_only=True)
-
-    class Meta:
-        model = User
-        fields = (
-            'id', 'first_name', 'last_name', 'gender', 'email', 'role', 'mobile', 'is_active', 'avatar', 'industry',
-            'industry_name', 'core_user',
-            'sub_industry')
-        read_only_fields = ('id', 'role', 'is_active', 'is_verified')
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# MODEL: change password user
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------------------------------------------------------------------
 class PasswordSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
+        user = self.context["request"].user
+
+        try:
+            password_validation.validate_password(attrs["password"], user)
+        except ValidationError as e:
+            raise serializers.ValidationError({"password": list(e.messages)})
         return super().validate(attrs)
-
-
-class PasswordRetypeSerializer(PasswordSerializer):
-    re_password = serializers.CharField(write_only=True)
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-        if attrs["password"] == attrs["re_password"]:
-            return attrs
-        else:
-            raise serializers.ValidationError({"error": "رمز عبور مطابقت ندارد."})
 
 
 class CurrentPasswordSerializer(serializers.Serializer):
@@ -413,123 +125,263 @@ class CurrentPasswordSerializer(serializers.Serializer):
         if is_password_valid:
             return value
         else:
-            raise serializers.ValidationError({"error": 'رمز عبور فعلی اشتباه است'})
+            raise serializers.ValidationError({"current_password": 'Current password is invalid.'})
+
+
+class PasswordRetypeSerializer(PasswordSerializer):
+    re_password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if attrs["password"] == attrs["re_password"]:
+            return attrs
+        else:
+            raise serializers.ValidationError({"password": "password and re-type password doesn't match."})
+
+
+class PasswordUserSerializer(serializers.Serializer):
+    user = serializers.UUIDField()
+
+    def validate_user(self, value):
+        if not User.objects.filter(id=value).exists():
+            raise serializers.ValidationError({"user": "User not found."})
+        return value
+
+
+class SetPasswordSerializer(PasswordRetypeSerializer, PasswordSerializer, PasswordUserSerializer):
+    pass
 
 
 class ChangePasswordSerializer(PasswordRetypeSerializer, PasswordSerializer, CurrentPasswordSerializer):
     pass
 
 
+class ProfileChangePasswordSerializer(PasswordRetypeSerializer, PasswordSerializer, CurrentPasswordSerializer):
+    pass
+
+
+class RegisterSerializer(PasswordRetypeSerializer, PasswordSerializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError({"email": "Email is already taken."})
+        return value
+
+
+class ActiveBanUserSerializer(serializers.Serializer):
+    user = serializers.UUIDField()
+    status = serializers.BooleanField()
+
+    def validate_user(self, value):
+        if not User.objects.filter(id=value).exists():
+            raise serializers.ValidationError({"user": "User not found."})
+        return value
+
+
+class SendActivationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        user = User.objects.filter(email=value).first()
+        if not user:
+            raise serializers.ValidationError({"email": "Email not registered."})
+        if user.is_banned:
+            raise serializers.ValidationError({"email": "User is banned."})
+        if user.email_verified:
+            raise serializers.ValidationError({"email": "User is already verified."})
+        return value
+
+
+class ActivationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    token = serializers.IntegerField()
+
+    def validate_email(self, value):
+        user = User.objects.filter(email=value).first()
+        if not user:
+            raise serializers.ValidationError({"email": "Email not registered."})
+        if user.is_banned:
+            raise serializers.ValidationError({"email": "User is banned."})
+        if user.mobile_verified:
+            raise serializers.ValidationError({"email": "User is already verified."})
+        return value
+
+    def validate_token(self, value):
+        email = self.context['request'].data['email']
+        user = User.objects.filter(email=email).first()
+        if user.verify_email_token_expire_at < timezone.now():
+            raise serializers.ValidationError("Timeout.")
+        if user.verify_email_token != value:
+            raise serializers.ValidationError("Invalid token.")
+        return value
+
+
+class ChangeAvatarSerializer(serializers.ModelSerializer):
+    avatar = serializers.ImageField(required=True)
+
+    def validate_avatar(self, image):
+        if image.size > settings.MAX_AVATAR_FILE_SIZE:
+            print(image.size)
+            raise ValidationError("File size too big!")
+        return image
+
+    class Meta:
+        model = get_user_model()
+        fields = ('avatar',)
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        user = User.objects.filter(email=value).first()
+        if not user:
+            raise serializers.ValidationError("Email not registered.")
+        if user.is_banned:
+            raise serializers.ValidationError("User is banned.")
+        if not user.email_verified:
+            raise serializers.ValidationError("User is not active.")
+        return value
+
+
+class ResetPasswordConfirmSerializer(PasswordRetypeSerializer, PasswordSerializer, serializers.Serializer):
+    email = serializers.EmailField()
+    token = serializers.IntegerField()
+
+    def validate_email(self, value):
+        user = User.objects.filter(email=value).first()
+        if not user:
+            raise serializers.ValidationError("Email not registered.")
+        if user.is_banned:
+            raise serializers.ValidationError("User is banned.")
+        if not user.email_verified:
+            raise serializers.ValidationError("User is not active.")
+        return value
+
+    def validate_token(self, value):
+        email = self.context['request'].data['email']
+        user = User.objects.filter(email=email).first()
+        if user.verify_email_token_expire_at < timezone.now():
+            raise serializers.ValidationError("Timeout.")
+        if user.verify_email_token != value:
+            raise serializers.ValidationError("Invalid token.")
+        return value
+
+
+# -----------------------------------------------------------------------------------------
+
+
+class ListUserSerializer(serializers.ModelSerializer):
+    # user_type_list = serializers.SerializerMethodField(required=False, read_only=True)
+
+    class Meta:
+        model = get_user_model()
+        fields = ('id', 'first_name', 'last_name', 'email', 'user_type', 'is_active', 'can_delete', 'mobile',
+                  'avatar', 'created_by', 'updated_by', 'created_at', 'updated_at',
+                  'email_verified', 'mobile_verified', 'two_step_auth')  # 'user_type_list',
+        extra_kwargs = {
+            'password': {
+                'write_only': True
+            }
+        }
+
+    # def get_user_type_list(self, user):
+    #     types = []
+    #     for t in UserType.choices:
+    #         if user.user_type == UserType.MANAGER:
+    #             continue
+    #         types.append(t)
+    #     return types
+
+
+class RetrieveUserSerializer(serializers.ModelSerializer):
+    # user_type_list = serializers.SerializerMethodField(required=False, read_only=True)
+
+    class Meta:
+        model = get_user_model()
+        fields = ('id', 'full_name', 'first_name', 'last_name', 'email', 'email_verified', 'user_type', 'is_active',
+                  'can_delete', 'mobile', 'mobile_verified', 'is_staff', 'joined_at', 'logout_at', 'login_at',
+                  'is_banned', 'can_delete', 'notify_after_login', 'two_step_auth', 'avatar',
+                  'created_by', 'updated_by', 'created_at', 'updated_at'
+                  )  # 'user_type_list',
+
+    # def get_user_type_list(self, user):
+    #     types = []
+    #     for t in UserType.choices:
+    #         if user.user_type == UserType.MANAGER:
+    #             continue
+    #         types.append(t)
+    #     return types
+
+
+class CreateUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = get_user_model()
+        fields = ('id', 'first_name', 'last_name', 'email', 'user_type', 'is_active', 'mobile')
+        extra_kwargs = {
+            'password': {
+                'write_only': True
+            }
+        }
+
+
+class UserSerializer(serializers.ModelSerializer):
+    # user_type_list = serializers.SerializerMethodField(required=False, read_only=True)
+
+    class Meta:
+        model = get_user_model()
+        fields = (
+        'id', 'full_name', 'first_name', 'last_name', 'email', 'user_type', 'is_active', 'can_delete', 'mobile',
+        'avatar', 'created_by', 'updated_by', 'created_at', 'updated_at'
+        )  # 'user_type_list',
+        extra_kwargs = {
+            'password': {
+                'write_only': True
+            }
+        }
+
+
+class CurrentUserSerializer(serializers.ModelSerializer):
+    # user_type_list = serializers.SerializerMethodField(required=False, read_only=True)
+
+    class Meta:
+        model = get_user_model()
+        fields = (
+        'id', 'full_name', 'first_name', 'last_name', 'email', 'user_type', 'is_active', 'can_delete', 'mobile',
+        'avatar', 'created_by', 'updated_by', 'created_at', 'updated_at'
+        )  # 'user_type_list',
+        extra_kwargs = {
+            'password': {
+                'write_only': True
+            }
+        }
+
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# MODEL: ADMIN  panel
+# SERIALIZER: UserEmailSerializer
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-class SendCodePasswordCheckBCSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-    password = serializers.CharField(write_only=True)
-
-    def validate(self, data):
-        mobile = data.get('mobile')
-        password = data.get('password')
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"error": "فرمت شماره موبایل نادرست است"})
-
-        try:
-            user = User.objects.get(mobile=mobile)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"error": "کاربری با این شماره موبایل یافت نشد."})
-
-        if not user.check_password(password):
-            raise serializers.ValidationError({"error": "رمز عبور نادرست است."})
-
-        if not user.is_verified:
-            raise serializers.ValidationError({"error": "حساب کاربری شما تایید نشده است."})
-
-        if user.role != 'bc':
-            raise serializers.ValidationError({"error": "دسترسی فقط برای بیزینس کوچ ها مجاز است."})
-
-        try:
-            verification_code = ''.join(random.choices(string.digits, k=6))
-            redis_conn = get_redis_connection("default")
-            redis_conn.setex(f"verification_code:{mobile}", 120, verification_code)
-
-            logger.info(f"OTP {verification_code} stored for mobile {mobile}")
-            send_verification_sms.delay(mobile, verification_code)
-            logger.info(f"OTP send task triggered for mobile {mobile}")
-        except Exception as e:
-            logger.error(f"Error sending OTP for mobile {mobile}: {str(e)}")
-            raise serializers.ValidationError({"error": f"ارسال کد تأیید ناموفق بود: {str(e)}"})
-
-        return data
+class ProfileEmailHistorySerializer(CustomSerializer):
+    class Meta:
+        model = UserEmailHistory
+        fields = ('id', 'subject', 'body', 'created_at')
 
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-class SendCodePasswordCheckAdminSerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-    password = serializers.CharField(write_only=True)
-
-    def validate(self, data):
-        mobile = data.get('mobile')
-        password = data.get('password')
-
-        if not (mobile.isdigit() and len(mobile) == 11):
-            raise serializers.ValidationError({"error": "فرمت شماره موبایل نادرست است"})
-
-        try:
-            user = User.objects.get(mobile=mobile)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"error": "کاربری با این شماره موبایل یافت نشد."})
-
-        if not user.check_password(password):
-            raise serializers.ValidationError({"error": "رمز عبور نادرست است."})
-
-        if not user.is_verified:
-            raise serializers.ValidationError({"error": "حساب کاربری شما تایید نشده است."})
-
-        if user.role not in ['admin', 'superuser']:
-            raise serializers.ValidationError({"error": "دسترسی فقط برای مدیران مجاز است."})
-
-        try:
-            verification_code = ''.join(random.choices(string.digits, k=6))
-            redis_conn = get_redis_connection("default")
-            redis_conn.setex(f"verification_code:{mobile}", 120, verification_code)
-
-            logger.info(f"OTP {verification_code} stored for mobile {mobile}")
-            send_verification_sms.delay(mobile, verification_code)
-            logger.info(f"OTP send task triggered for mobile {mobile}")
-        except Exception as e:
-            logger.error(f"Error sending OTP for mobile {mobile}: {str(e)}")
-            raise serializers.ValidationError({"error": f"ارسال کد تأیید ناموفق بود: {str(e)}"})
-
-        return data
+class ProfileUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = get_user_model()
+        fields = ('id', 'full_name', 'first_name', 'last_name', 'email', 'user_type', 'avatar', 'two_step_auth',
+                  'notify_after_login')
+        read_only_fields = ('id', 'email', 'full_name', 'user_type', 'avatar')
 
 
-class LoginVerifySerializer(serializers.Serializer):
-    mobile = serializers.CharField(max_length=11)
-    code = serializers.CharField(max_length=6)
+class UpdateUserSerializer(serializers.ModelSerializer):
+    # email = serializers.EmailField(required=True)
 
-    def validate(self, data):
-        mobile = data['mobile']
-        code = data['code']
-
-        redis_conn = get_redis_connection("default")
-        stored_code = redis_conn.get(f"verification_code:{mobile}")
-
-        if not stored_code or stored_code.decode() != code:
-            raise serializers.ValidationError({"error": "کد تایید نامعتبر یا منقضی شده است."})
-
-        try:
-            user = User.objects.get(mobile=mobile)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"error": "کاربر یافت نشد."})
-
-        if not user.is_verified:
-            raise serializers.ValidationError({"error": "حساب کاربری تایید نشده است."})
-
-        if user.role not in ['admin', 'bc', 'superuser']:
-            raise serializers.ValidationError({"error": "دسترسی فقط برای کاربران ادمین یا بیزینس کوچ مجاز است."})
-
-        redis_conn.delete(f"verification_code:{mobile}")
-
-        data['user'] = user
-        return data
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name', 'mobile', 'avatar')
+        extra_kwargs = {
+            'first_name': {'required': True},
+            'last_name': {'required': True},
+        }

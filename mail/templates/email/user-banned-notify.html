@@ -1,0 +1,31 @@
+{% extends 'email/base.html' %}
+{% load i18n %}
+
+{% block subject %}
+{% blocktrans %}{{ site_name }} - Your password has been successfully changed!{% endblocktrans %}
+{% endblock %}
+
+{% block text_body %}
+Dear {{ user.full_name }},
+
+{% if status %}
+You have been banned from our site for some reason.
+To find out why you were banned, please contact the site administrator.
+{% else %}
+Congratulations, you are unbanned. You can enter the site now.
+{% endif %}
+
+Thanks for using our site,
+chavoshinia.de Team
+{% endblock text_body %}
+
+{% block html_body %}
+    {% if status %}
+        <p style="padding: 2px 0;line-height: 2">You have been banned from our site for some reason.</p>
+        <p>To find out why you were banned, please contact the site administrator.</p>
+    {% else %}
+        <p style="padding: 2px 0;line-height: 2">Congratulations, you are unbanned. You can enter the site now.</p>
+    {% endif %}
+{% endblock html_body %}
+
+

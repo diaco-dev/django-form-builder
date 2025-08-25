@@ -1,0 +1,36 @@
+{% extends 'email/base.html' %}
+{% load i18n %}
+
+{% block subject %}
+{% blocktrans %}{Signed in to Your Account Now{% endblocktrans %}
+{% endblock %}
+
+{% block text_body %}
+Hi {{ user.first_name }},
+
+Your account was just signed in to our site.
+
+IP address: {{ ip }}
+{{ time }}
+
+If this was you, carry on. If you don't recognize this activity, please reset your password.
+
+We also strongly recommend you turn on two-factor authentication for your account. It only
+takes a few minutes and dramatically improves your account security.
+
+Thanks for using our site,
+chavoshinia.de Team
+{% endblock text_body %}
+
+{% block html_body %}
+    <p style="padding: 2px 0;line-height: 2">Your account was just signed in to our site.</p>
+    <p>
+        IP address: {{ ip }}<br>
+        {{ time }}
+    </p>
+    <p style="padding: 2px 0;line-height: 2">If this was you, carry on. If you don't recognize this activity, please reset your password.</p>
+    <p style="padding: 2px 0;line-height: 2">We also strongly recommend you turn on two-factor authentication for your account. It only
+takes a few minutes and dramatically improves your account security.</p>
+{% endblock html_body %}
+
+

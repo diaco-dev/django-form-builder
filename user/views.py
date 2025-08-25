@@ -1,9 +1,8 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.tokens import default_token_generator
-from django.shortcuts import render
 from django.utils import timezone
 from django.utils.crypto import get_random_string
+from djoser.email import ConfirmationEmail
 from rest_framework import generics, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
@@ -13,24 +12,19 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
-
-from core.paginations import CustomLimitOffsetPagination
+from history.models import UserEmailHistory
+from user.notifications import ManagerSetPasswrdNotifyEmail, UserBanNotifyEmail
+from utils.paginations import CustomLimitOffsetPagination
 from core.permissions import IsManager, IsManagerOrAbove, CurrentUserOrManager, IsOwner, IsSystemManager, \
     IsOfficeEmployee, IsSystemManagerOrIsManagerOrOfficeEmployee
-from core.types import UserType
-from core.utils import encode_uid
-from history.generics import HistoryViewSet
-from history.mixins import ActivityLogMixin
-from mail.generics import BaseEmailMessage
-from core import signals
-from history.models import UserEmailHistory
-from user.notifications import ConfirmationEmail, PasswordResetEmail, ManagerSetPasswrdNotifyEmail, UserBanNotifyEmail
+from core.type import UserType
+from user import signals
 from user.serializers import UpdateUserSerializer, UserSerializer, CreateUserSerializer, ListUserSerializer, \
     RetrieveUserSerializer, SetPasswordSerializer, ChangePasswordSerializer, ActivationSerializer, \
     SendActivationSerializer, ResetPasswordSerializer, ResetPasswordConfirmSerializer, RegisterSerializer, \
     ActiveBanUserSerializer, CurrentUserSerializer, ProfileUserSerializer, ChangeAvatarSerializer, \
     ProfileEmailHistorySerializer
-from user.utils import logout_user
+from utils.logout import logout_user
 
 User = get_user_model()
 

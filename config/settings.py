@@ -3,8 +3,6 @@ from datetime import timedelta
 from logging import debug
 from pathlib import Path
 from dotenv import load_dotenv
-import firebase_admin
-from firebase_admin import credentials
 
 
 # Load environment variables
@@ -51,6 +49,8 @@ INSTALLED_APPS = [
     'auditlog',
     'core',
     'forms',
+    'mail',
+    'history'
 ]
 
 MIDDLEWARE = [

@@ -82,3 +82,35 @@ class VideoType(models.TextChoices):
     SOFTWARE = 'SOFTWARE', 'Software'
     SOURCE = 'SOURCE', 'Source'
     GENERAL = 'GENERAL', 'General'
+
+
+class UserType(models.IntegerChoices):
+    SYSTEM_MANAGER = 100, _("System Manager")
+    MANAGER = 200, _("Manager")
+    OFFICE_EMPLOYEE = 300, _("Office Employee")
+    WAREHOUSE_EMPLOYEE = 400, _("Warehouse Employee")
+    CUSTOMER = 1000, _("Customer")
+    CUSTOMS_OFFICER = 2000, _("Customs Officer")
+    UNDEFINED = 9999, _("Undefined")
+
+
+class UserActionType(models.TextChoices):
+    CREATE = 'C', _("Create")
+    READ = 'R', _("Read")
+    UPDATE = 'U', _("Update")
+    DELETE = 'D', _("Delete")
+    LOGIN = 'L', _("Login")
+    LOGOUT = 'T', _("Logout")
+    LOGIN_FAILED = 'F', _("Login Failed")
+
+
+class UserActionStatus(models.TextChoices):
+    SUCCESS = 'S', _("Success")
+    FAILED = 'F', _("Failed")
+
+class EmailHistoryType(models.TextChoices):
+    NEW = 'N', _("New")
+    SENDING = 'S', _("Sending")
+    FAIL = 'F', _("Fail")
+    DONE = 'D', _("Done")
+

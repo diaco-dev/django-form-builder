@@ -171,6 +171,7 @@ class CustomUser(AbstractUser):
     email = models.EmailField(
         blank=True,
         null=True,
+        unique=True
     )
     mobile = models.CharField(
         max_length=11,

@@ -5,7 +5,13 @@ from rest_framework import status
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
+import jwt
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth import user_logged_out, user_logged_in, get_user_model
+
 User = get_user_model()
 
 # -----------------------------------------------------------------------------------
@@ -57,3 +63,25 @@ class LogoutAPIView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# CLASS: CustomTokenObtainPairView
+#
+# Takes a set of user credentials and returns an access and refresh JSON web token pair to prove the authentication
+# of those credentials. Also perform login and send login signal.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+class CustomTokenObtainPairView(TokenObtainPairView):
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+
+        if response.status_code == status.HTTP_200_OK:
+            payload = jwt.decode(response.data.get('access'), settings.SIMPLE_JWT['VERIFYING_KEY'],
+                                 algorithms=[settings.SIMPLE_JWT['ALGORITHM']])
+            user = User.objects.get(id=payload.get('user_id'))
+
+            if not user.email_verified:
+                return Response({"detail": "not verified"}, status=status.HTTP_403_FORBIDDEN)
+
+            user.login()
+            user_logged_in.send(sender=user.__class__, request=request, user=user)
+
+        return response

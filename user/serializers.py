@@ -1,11 +1,13 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model, password_validation
+from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 from rest_framework.exceptions import ValidationError
+from django.contrib.auth.password_validation import validate_password
 
 from core.serializers import CustomSerializer
-from core.types import UserType
 from history.models import UserEmailHistory
 
 User = get_user_model()

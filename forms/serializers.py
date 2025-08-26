@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from core.type import QuestionType
-from .models import Form, Question, Option, Answer, Response, Attendance, Guest
+from .models import Form, Question, Option, Answer, Response
 from django.db import transaction
 #------------------ADMIN------------------------------------------------#
 class OptionSerializer(serializers.ModelSerializer):
@@ -119,17 +119,3 @@ class ResponseUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = Response
         fields = ['id', 'form','first_name','last_name','form_title','user','_created_at', '_updated_at', '_updated_by','_created_by']
-
-#------------------------------------------------------------------------------------------------------------#
-class GuestSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Guest
-        fields = ['id','first_name', 'last_name','mobile', 'support_name', '_created_at','_created_by']
-
-
-class AttendanceSerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source='student.get_full_name', read_only=True)
-    guest_details= GuestSerializer(many=True, read_only=True)
-    class Meta:
-        model = Attendance
-        fields = ['id','form', 'day','guest','guest_details','student_name', 'student', 'status', '_created_at','_created_by']

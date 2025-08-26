@@ -135,12 +135,6 @@ class Response(GenericModel):
         null=True,
         blank=True
     )
-    day = models.ForeignKey(
-        to='course.Day',
-        on_delete=models.CASCADE,
-        related_name='responses'
-        , null=True,
-        blank=True)
     class Meta:
         verbose_name_plural = "responses"
         verbose_name = "response"
@@ -188,83 +182,4 @@ class Answer(GenericModel):
         return self.value or self.option.text
 
 
-#------------------------------------------------------------------------------------------------------------#
-class Guest(GenericModel):
 
-    first_name = models.CharField(
-        verbose_name=("first_name"),
-        max_length=150,
-        null=True,
-        blank=True
-    )
-    last_name = models.CharField(
-        verbose_name=("last_name"),
-        max_length=150,
-        null=True,
-        blank=True
-    )
-    mobile = models.CharField(
-        verbose_name=("last_name"),
-        max_length=15,
-        null=True,
-        blank=True
-    )
-    support_name = models.CharField(
-        verbose_name=("support_name"),
-        max_length=150,
-        null=True,
-        blank=True
-    )
-    class Meta:
-        verbose_name_plural = "guest"
-        verbose_name = "gust"
-        db_table = 'gust'
-
-
-    def __str__(self):
-        return f"{self.first_name} - {self.last_name}"
-
-
-class Attendance(GenericModel):
-    day = models.ForeignKey(
-        to='course.Day',
-        on_delete=models.CASCADE,
-        related_name='day_attendance',
-        null=True,
-        blank=True
-    )
-    student = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        limit_choices_to={'role': 'user'},
-        null=True,
-        blank=True
-    )
-    form = models.ForeignKey(
-        Form,
-        on_delete=models.CASCADE,
-        limit_choices_to={'type': 'DAILY_CHECK'},
-        null=True,
-        blank=True
-    )
-    status = models.CharField(
-        max_length=10,
-        choices=[('present', 'Present'),
-                 ('absent', 'Absent')],
-        null=True,
-        blank=True
-    )
-    guest = models.ForeignKey(
-        Guest,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True
-    )
-    class Meta:
-        verbose_name_plural = "attendance"
-        verbose_name = "attendance"
-        db_table = 'attendance'
-
-
-    def __str__(self):
-        return f"{self.student} - {self.status}"

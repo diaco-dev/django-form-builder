@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Form, Question, Option, Attendance, Answer, Response, Guest
+from .models import Form, Question, Option, Answer, Response
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 
@@ -30,18 +30,6 @@ class FormAdmin(admin.ModelAdmin):
     list_filter = ['is_active', '_created_at']
     search_fields = ['title']
     inlines = [QuestionInline]
-
-
-class AttendanceResource(resources.ModelResource):
-    class Meta:
-        model = Attendance
-
-
-@admin.register(Attendance)
-class AttendanceResourceAdmin(ImportExportModelAdmin):
-    resource_class = AttendanceResource
-    # list_display = ['student__first_name', 'student__last_name', 'status', ]
-    search_fields = ['student__first_name', 'student__last_name']
 
 class AnswerResource(resources.ModelResource):
     class Meta:
@@ -76,11 +64,3 @@ class ResponseResourceAdmin(ImportExportModelAdmin):
     ordering = ('-_created_at',)
     search_fields = ['form__title','user__first_name','user__last_name']
     list_filter = ['form__title',]
-
-class GuestResource(resources.ModelResource):
-    class Meta:
-        model = Guest
-
-@admin.register(Guest)
-class GuestResourceAdmin(ImportExportModelAdmin):
-    resource_class = GuestResource

@@ -3,10 +3,9 @@ from rest_framework.viewsets import ModelViewSet
 
 from forms.models import Response as ResponseModel
 from utils.paginations import CustomLimitOffsetPagination
-from user.models import GroupStudent
-from .models import Form, Attendance, Question, Option, Guest
-from .serializers import FormSerializer, UserFormSerializer, ResponseSerializer, AttendanceSerializer, \
-    QuestionSerializer, GuestSerializer, ResponseUserSerializer
+from .models import Form, Question, Option
+from .serializers import FormSerializer, UserFormSerializer, ResponseSerializer, \
+    QuestionSerializer, ResponseUserSerializer
 from rest_framework import viewsets, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -123,38 +122,3 @@ class ResponseUserViewSet(viewsets.ModelViewSet):
 class IsBusinessCoach(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.role == 'bc'
-
-class AttendanceViewSet(ModelViewSet):
-    queryset = Attendance.objects.all()
-    serializer_class = AttendanceSerializer
-    permission_classes = [IsAuthenticated]
-    pagination_class = CustomLimitOffsetPagination
-    filter_backends = (DjangoFilterBackend, OrderingFilter)
-    filterset_fields = ['_created_by','day',]
-    ordering_fields = ('_created_at', '_updated_at')
-
-    def get_queryset(self):
-        user = self.request.user
-        
-        if user.is_superuser or user.role == 'admin':
-            return super().get_queryset()
-
-        elif user.role == 'bc':
-            group_students = GroupStudent.objects.filter(
-                group__business_coach=user
-            ).values_list('student_id', flat=True)
-
-            return super().get_queryset().filter(
-                student_id__in=group_students
-            )
-
-        elif user.role == 'user':
-            return super().get_queryset().filter(student=user)
-
-        return Attendance.objects.none()
-
-class GuestViewSet(viewsets.ModelViewSet):
-    queryset = Guest.objects.all()
-    serializer_class = GuestSerializer
-    permission_classes = [IsAuthenticated]
-    pagination_class = CustomLimitOffsetPagination

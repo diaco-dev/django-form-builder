@@ -6,3 +6,8 @@ class ConcatExpression(models.Func):
     function = None
     output_field = models.CharField(max_length=300)
     template = "%(expressions)s"
+
+
+class EmailTemplateNotFound(Exception):
+    def __init__(self, arg):
+        self.msg = arg

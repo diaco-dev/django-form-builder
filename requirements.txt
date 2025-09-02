@@ -43,12 +43,12 @@ pillow==11.2.1
 
 
 
-#celery==5.4.0
-#redis==5.2.1
-#django-redis==5.4.0
-#django-eventstream==5.3.1
-#django-celery-beat==2.8.0
-#flower==2.0.1
+celery==5.4.0
+redis==5.2.1
+django-redis==5.4.0
+django-eventstream==5.3.1
+django-celery-beat==2.8.0
+flower==2.0.1
 
 
 

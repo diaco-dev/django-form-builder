@@ -21,28 +21,21 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
-    path('superpanel/', admin.site.urls),
+    path('admin/', admin.site.urls),
 ]
 urlpatterns += [
     # Swagger UI
     path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('api/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-
     path('api/v1/api-token-auth/',obtain_auth_token),
     path('api/v1/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/v1/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/v1/user/', include('user.urls')),
     path('api/v1/core/', include('core.urls')),
-    path('api/v1/okr/', include('okr.urls')),
-    path('api/v1/notification/', include('notifications.urls')),
-    path('api/v1/todo/', include('todo.urls')),
-    path('api/v1/kpi/', include('kpi.urls')),
-    path('api/v1/bmc/', include('bmc.urls')),
-    path('api/v1/sop/', include('sop.urls')),
+    path('api/v1/history/', include('history.urls')),
+    path('api/v1/mail/', include('mail.urls')),
     path('api/v1/forms/', include('forms.urls')),
-    path('api/v1/course/', include('course.urls')),
-    path('api/v1/dashboard/', include('dashboard.urls')),
-    path('api/v1/address/', include('address.urls')),
+    # path('api/v1/dashboard/', include('dashboard.urls')),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
